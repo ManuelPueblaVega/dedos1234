@@ -1,0 +1,142 @@
+<html><head><base href="https://hand-note-reader-improved.app/">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lector de Fononimia Mejorado</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+    background-color: #f0f0f0;
+  }
+  #video-container {
+    position: relative;
+    width: 640px;
+    height: 480px;
+  }
+  #output-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  #note-display {
+    font-size: 48px;
+    margin-top: 20px;
+  }
+  #start-button {
+    font-size: 18px;
+    padding: 10px 20px;
+    margin-top: 20px;
+    cursor: pointer;
+  }
+  #instruction {
+    font-size: 16px;
+    margin-top: 10px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div id="video-container">
+    <video id="video" width="640" height="480" autoplay muted></video>
+    <canvas id="output-canvas" width="640" height="480"></canvas>
+  </div>
+  <div id="note-display">-</div>
+  <div id="instruction">Levanta dedos para tocar notas:<br>1 dedo: Do, 2 dedos: Re, 3 dedos: Mi, 4 dedos: Fa, 5 dedos: Sol</div>
+  <button id="start-button">Iniciar</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('output-canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const noteDisplay = document.getElementById('note-display');
+    const startButton = document.getElementById('start-button');
+
+    const notes = ['Do', 'Re', 'Mi', 'Fa', 'Sol'];
+    const frequencies = [261.63, 293.66, 329.63, 349.23, 392.00];
+    let currentNote = null;
+    let synth;
+
+    function onResults(results) {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      
+      if (results.multiHandLandmarks) {
+        for (const landmarks of results.multiHandLandmarks) {
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
+          drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+          
+          const raisedFingers = countRaisedFingers(landmarks);
+          if (raisedFingers > 0 && raisedFingers <= 5) {
+            const newNote = notes[raisedFingers - 1];
+            if (newNote !== currentNote) {
+              currentNote = newNote;
+              noteDisplay.textContent = currentNote;
+              playNote(frequencies[raisedFingers - 1]);
+            }
+          } else {
+            currentNote = null;
+            noteDisplay.textContent = '-';
+          }
+        }
+      }
+      canvasCtx.restore();
+    }
+
+    function countRaisedFingers(landmarks) {
+      const tipIds = [4, 8, 12, 16, 20];
+      const baseIds = [2, 5, 9, 13, 17];
+      let count = 0;
+
+      for (let i = 0; i < tipIds.length; i++) {
+        if (landmarks[tipIds[i]].y < landmarks[baseIds[i]].y) {
+          count++;
+        }
+      }
+
+      return count;
+    }
+
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
+    });
+
+    startButton.addEventListener('click', () => {
+      camera.start();
+      synth = new Tone.Synth().toDestination();
+      startButton.disabled = true;
+    });
+
+    function playNote(frequency) {
+      if (synth) {
+        synth.triggerAttackRelease(frequency, '0.1');
+      }
+    }
+  </script>
+</body>
+</html>
